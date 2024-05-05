@@ -24,7 +24,7 @@ for column in dataframes.columns:
         
 # Modify the DataFrame to split the 'NAME' column into 'STATION_CODE' and 'LOCATION'
 dataframes[['STATION_CODE', 'LOCATION']] = dataframes['NAME'].str.split(', ', expand=True)
-
+dataframes['DATE'] = pd.to_datetime(dataframes['DATE'])
 # Drop the original 'NAME' column
 dataframes.drop(columns=['NAME'], inplace=True)
 
@@ -37,17 +37,16 @@ try:
     with pymysql.connect(host=host, user=user, database=database, cursorclass=pymysql.cursors.DictCursor) as connection:
         # Open cursor
         with connection.cursor() as cursor:
-            # Create Dimension_Géographique table
-             create_table_sql = """
-                CREATE TABLE IF NOT EXISTS Dimension_Station (
-                    STATION VARCHAR(255) ,
-                    NAME VARCHAR(255),
-                    LATITUDE FLOAT,
-                    LONGITUDE FLOAT,
-                    ELEVATION FLOAT
-                )
-                """
-             cursor.execute(create_table_sql)
+             create_station_table_sql = """
+            CREATE TABLE IF NOT EXISTS Dimension_Station (
+                STATION VARCHAR(255) ,
+                NAME VARCHAR(255),
+                LATITUDE FLOAT,
+                LONGITUDE FLOAT,
+                ELEVATION FLOAT
+            )
+            """
+             cursor.execute(create_station_table_sql)
 
             # Insert data into Dimension_Station table
              for index, row in dataframes.iterrows():
@@ -59,6 +58,38 @@ try:
                 # Execute the SQL query
                 cursor.execute(insert_station_sql, (row['STATION'], row['STATION_CODE'], row['LATITUDE'], row['LONGITUDE'], row['ELEVATION']))
 
+            # Create Dimension_Date table
+             create_date_table_sql = """
+            CREATE TABLE IF NOT EXISTS Dimension_Date (
+                DATE DATE ,
+                MOIS INT,
+                ANNÉE INT,
+                JOUR INT,
+                TRIMESTRE INT,
+                SAISON VARCHAR(255)
+            )
+            """
+             cursor.execute(create_date_table_sql)
+
+            # Insert data into Dimension_Date table
+             for index, row in dataframes.iterrows():
+                # Prepare the SQL query
+                insert_date_sql = """
+                INSERT INTO Dimension_Date (DATE, MOIS, ANNÉE, JOUR, TRIMESTRE, SAISON)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """
+                # Extract month, year, day, and season from the date
+                mois = row['DATE'].month
+                année = row['DATE'].year
+                jour = row['DATE'].day
+                trimestre = (row['DATE'].month - 1) // 3 + 1
+                saison = 'Spring' if 3 <= row['DATE'].month <= 5 else \
+                         'Summer' if 6 <= row['DATE'].month <= 8 else \
+                         'Autumn' if 9 <= row['DATE'].month <= 11 else 'Winter'
+
+                # Execute the SQL query
+                cursor.execute(insert_date_sql, (row['DATE'], mois, année, jour, trimestre, saison))
+
             # Create Dimension_Mesures table
              create_table3_sql = """
             CREATE TABLE IF NOT EXISTS Dimension_Mesures (
@@ -67,28 +98,20 @@ try:
                 TAVG FLOAT,
                 TMAX FLOAT,
                 TMIN FLOAT,
-                STATION_CODE VARCHAR(30),
                 LOCATION INT
             )
             """
              cursor.execute(create_table3_sql)
 
-            # Insert data into Dimension_Station table
+            # Insert data into Dimension_Mesures table
              for index, row in dataframes.iterrows():
                 # Prepare the SQL query
-                insert_station_sql = """
-                INSERT INTO Dimension_Station (STATION, NAME)
-                VALUES (%s, %s)
+                insert_mesures_sql = """
+                INSERT INTO Dimension_Mesures (DATE, PRCP, TAVG, TMAX, TMIN, LOCATION)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 """
                 # Execute the SQL query
-                cursor.execute(insert_station_sql, (row['STATION'], row['STATION_CODE']))
-
-                # Insert data into Dimension_Mesures table
-                insert_mesures_sql = """
-                INSERT INTO Dimension_Mesures (DATE, PRCP, TAVG, TMAX, TMIN, STATION_CODE, LOCATION)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """
-                cursor.execute(insert_mesures_sql, (row['DATE'], row['PRCP'], row['TAVG'], row['TMAX'], row['TMIN'], row['STATION_CODE'], row['LOCATION']))
+                cursor.execute(insert_mesures_sql, (row['DATE'], row['PRCP'], row['TAVG'], row['TMAX'], row['TMIN'], row['LOCATION']))
             
         # Commit the transaction
         connection.commit()
