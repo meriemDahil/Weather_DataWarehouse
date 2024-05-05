@@ -115,7 +115,9 @@ try:
                 TAVG FLOAT,
                 TMAX FLOAT,
                 TMIN FLOAT,
-                LOCATION VARCHAR(25)
+                LOCATION VARCHAR(25),
+                FOREIGN KEY (DATE) REFERENCES Dimension_Station(DATE)
+                
             )
             """
             cursor.execute(create_table3_sql)
