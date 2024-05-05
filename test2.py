@@ -2,21 +2,16 @@ import pandas as pd
 import pymysql.cursors
 import os
 
-# MySQL connection parameters
+
 host = 'localhost'
 user = 'root'
 database = 'testdatabase'
-
-# Directory containing CSV files
 csv_dir = 'MO_TU'
 
-# Get list of CSV files in the directory
 csv_files = [f for f in os.listdir(csv_dir) if f.endswith('.csv')]
 
-# Initialize an empty list to store dataframes
 all_dataframes = []
 
-# Read each CSV file into a dataframe and append to the list
 for csv_file in csv_files:
     file_path = os.path.join(csv_dir, csv_file)
     df = pd.read_csv(file_path, low_memory=False)
@@ -25,11 +20,11 @@ for csv_file in csv_files:
 # Concatenate all dataframes into one
 dataframes = pd.concat(all_dataframes, ignore_index=True)
 
-# Drop unused columns
+#column we kept 14 only
 columns_to_keep = ["STATION", "NAME", "LATITUDE", "LONGITUDE", "ELEVATION", "DATE", "PRCP", "PRCP_ATTRIBUTES", "TAVG", "TAVG_ATTRIBUTES", "TMAX", "TMAX_ATTRIBUTES", "TMIN", "TMIN_ATTRIBUTES"]
 dataframes = dataframes[columns_to_keep]
 
-# Ensure 'DATE' column is formatted correctly
+#reformate the date 
 dataframes['DATE'] = pd.to_datetime(dataframes['DATE'])
 
 # Fill NaN values with mean for numerical attributes and mode for object attributes
@@ -39,7 +34,7 @@ for column in dataframes.columns:
     else:
         dataframes[column].fillna(dataframes[column].mean(), inplace=True)
         
-# Modify the DataFrame to split the 'NAME' column into 'STATION_CODE' and 'LOCATION'
+#split the 'NAME' column into 'STATION_CODE' and 'LOCATION' location for country
 dataframes[['STATION_CODE', 'LOCATION']] = dataframes['NAME'].str.split(', ', expand=True)
 dataframes['DATE'] = pd.to_datetime(dataframes['DATE'])
 # Drop the original 'NAME' column
@@ -47,12 +42,15 @@ dataframes.drop(columns=['NAME'], inplace=True)
 
 # Ensure 'STATION_CODE' and 'LOCATION' columns are formatted correctly
 dataframes['STATION_CODE'] = dataframes['STATION_CODE'].astype(str)
-dataframes['LOCATION'] = 212  # Assuming a constant value for LOCATION for now
+dataframes['LOCATION'] = 212  # now here all the dataframes will have 212 fro algeria tunis and morrocco 
+
+#TODO : fix it 
+
 
 try:
-    # Establish a connection to MySQL database using pymysql
+    # connect to mysql 
     with pymysql.connect(host=host, user=user, database=database, cursorclass=pymysql.cursors.DictCursor) as connection:
-        # Open cursor
+        
         with connection.cursor() as cursor:
             # Create Dimension_Station table
             create_station_table_sql = """
@@ -68,12 +66,11 @@ try:
 
             # Insert data into Dimension_Station table
             for index, row in dataframes.iterrows():
-                # Prepare the SQL query
+               
                 insert_station_sql = """
                 INSERT INTO Dimension_Station (STATION, NAME, LATITUDE, LONGITUDE, ELEVATION)
                 VALUES (%s, %s, %s, %s, %s)
                 """
-                # Execute the SQL query
                 cursor.execute(insert_station_sql, (row['STATION'], row['STATION_CODE'], row['LATITUDE'], row['LONGITUDE'], row['ELEVATION']))
 
             # Create Dimension_Date table
@@ -89,9 +86,9 @@ try:
             """
             cursor.execute(create_date_table_sql)
 
-            # Insert data into Dimension_Date table
+            
             for index, row in dataframes.iterrows():
-                # Prepare the SQL query
+                
                 insert_date_sql = """
                 INSERT INTO Dimension_Date (DATE, MOIS, ANNÉE, JOUR, TRIMESTRE, SAISON)
                 VALUES (%s, %s, %s, %s, %s, %s)
@@ -105,7 +102,7 @@ try:
                          'Summer' if 6 <= row['DATE'].month <= 8 else \
                          'Autumn' if 9 <= row['DATE'].month <= 11 else 'Winter'
 
-                # Execute the SQL query
+                
                 cursor.execute(insert_date_sql, (row['DATE'], mois, année, jour, trimestre, saison))
 
             # Create Dimension_Mesures table
@@ -121,14 +118,13 @@ try:
             """
             cursor.execute(create_table3_sql)
 
-            # Insert data into Dimension_Mesures table
             for index, row in dataframes.iterrows():
-                # Prepare the SQL query
+                
                 insert_mesures_sql = """
                 INSERT INTO Dimension_Mesures (DATE, PRCP, TAVG, TMAX, TMIN, LOCATION)
                 VALUES (%s, %s, %s, %s, %s, %s)
                 """
-                # Execute the SQL query
+                
                 cursor.execute(insert_mesures_sql, (row['DATE'], row['PRCP'], row['TAVG'], row['TMAX'], row['TMIN'], row['LOCATION']))
             
         # Commit the transaction
