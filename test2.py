@@ -1,17 +1,34 @@
 import pandas as pd
 import pymysql.cursors
+import os
 
 # MySQL connection parameters
 host = 'localhost'
 user = 'root'
 database = 'testdatabase'
 
-# Read the new CSV file into a DataFrame
-dataframes = pd.read_csv('Weather_1960-1989_MOROCCO.csv', low_memory=False)
+# Directory containing CSV files
+csv_dir = 'MO_TU'
+
+# Get list of CSV files in the directory
+csv_files = [f for f in os.listdir(csv_dir) if f.endswith('.csv')]
+
+# Initialize an empty list to store dataframes
+all_dataframes = []
+
+# Read each CSV file into a dataframe and append to the list
+for csv_file in csv_files:
+    file_path = os.path.join(csv_dir, csv_file)
+    df = pd.read_csv(file_path, low_memory=False)
+    all_dataframes.append(df)
+
+# Concatenate all dataframes into one
+dataframes = pd.concat(all_dataframes, ignore_index=True)
+
 # Drop unused columns
 columns_to_keep = ["STATION", "NAME", "LATITUDE", "LONGITUDE", "ELEVATION", "DATE", "PRCP", "PRCP_ATTRIBUTES", "TAVG", "TAVG_ATTRIBUTES", "TMAX", "TMAX_ATTRIBUTES", "TMIN", "TMIN_ATTRIBUTES"]
 dataframes = dataframes[columns_to_keep]
-print(dataframes.info)
+
 # Ensure 'DATE' column is formatted correctly
 dataframes['DATE'] = pd.to_datetime(dataframes['DATE'])
 
@@ -37,7 +54,8 @@ try:
     with pymysql.connect(host=host, user=user, database=database, cursorclass=pymysql.cursors.DictCursor) as connection:
         # Open cursor
         with connection.cursor() as cursor:
-             create_station_table_sql = """
+            # Create Dimension_Station table
+            create_station_table_sql = """
             CREATE TABLE IF NOT EXISTS Dimension_Station (
                 STATION VARCHAR(255) ,
                 NAME VARCHAR(255),
@@ -46,10 +64,10 @@ try:
                 ELEVATION FLOAT
             )
             """
-             cursor.execute(create_station_table_sql)
+            cursor.execute(create_station_table_sql)
 
             # Insert data into Dimension_Station table
-             for index, row in dataframes.iterrows():
+            for index, row in dataframes.iterrows():
                 # Prepare the SQL query
                 insert_station_sql = """
                 INSERT INTO Dimension_Station (STATION, NAME, LATITUDE, LONGITUDE, ELEVATION)
@@ -59,7 +77,7 @@ try:
                 cursor.execute(insert_station_sql, (row['STATION'], row['STATION_CODE'], row['LATITUDE'], row['LONGITUDE'], row['ELEVATION']))
 
             # Create Dimension_Date table
-             create_date_table_sql = """
+            create_date_table_sql = """
             CREATE TABLE IF NOT EXISTS Dimension_Date (
                 DATE DATE ,
                 MOIS INT,
@@ -69,10 +87,10 @@ try:
                 SAISON VARCHAR(255)
             )
             """
-             cursor.execute(create_date_table_sql)
+            cursor.execute(create_date_table_sql)
 
             # Insert data into Dimension_Date table
-             for index, row in dataframes.iterrows():
+            for index, row in dataframes.iterrows():
                 # Prepare the SQL query
                 insert_date_sql = """
                 INSERT INTO Dimension_Date (DATE, MOIS, ANNÉE, JOUR, TRIMESTRE, SAISON)
@@ -91,7 +109,7 @@ try:
                 cursor.execute(insert_date_sql, (row['DATE'], mois, année, jour, trimestre, saison))
 
             # Create Dimension_Mesures table
-             create_table3_sql = """
+            create_table3_sql = """
             CREATE TABLE IF NOT EXISTS Dimension_Mesures (
                 DATE DATE,
                 PRCP FLOAT,
@@ -101,10 +119,10 @@ try:
                 LOCATION INT
             )
             """
-             cursor.execute(create_table3_sql)
+            cursor.execute(create_table3_sql)
 
             # Insert data into Dimension_Mesures table
-             for index, row in dataframes.iterrows():
+            for index, row in dataframes.iterrows():
                 # Prepare the SQL query
                 insert_mesures_sql = """
                 INSERT INTO Dimension_Mesures (DATE, PRCP, TAVG, TMAX, TMIN, LOCATION)
