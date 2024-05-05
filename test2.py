@@ -42,7 +42,7 @@ dataframes.drop(columns=['NAME'], inplace=True)
 
 # Ensure 'STATION_CODE' and 'LOCATION' columns are formatted correctly
 dataframes['STATION_CODE'] = dataframes['STATION_CODE'].astype(str)
-dataframes['LOCATION'] = 212  # now here all the dataframes will have 212 fro algeria tunis and morrocco 
+dataframes['LOCATION'] =dataframes['LOCATION'].astype(str)  # now here all the dataframes will have 212 fro algeria tunis and morrocco 
 
 #TODO : fix it 
 
@@ -55,6 +55,7 @@ try:
             # Create Dimension_Station table
             create_station_table_sql = """
             CREATE TABLE IF NOT EXISTS Dimension_Station (
+                ID_station INT AUTO_INCREMENT PRIMARY KEY,
                 STATION VARCHAR(255) ,
                 NAME VARCHAR(255),
                 LATITUDE FLOAT,
@@ -76,6 +77,7 @@ try:
             # Create Dimension_Date table
             create_date_table_sql = """
             CREATE TABLE IF NOT EXISTS Dimension_Date (
+                ID_date INT AUTO_INCREMENT PRIMARY KEY,
                 DATE DATE ,
                 MOIS INT,
                 ANNÉE INT,
@@ -98,9 +100,9 @@ try:
                 année = row['DATE'].year
                 jour = row['DATE'].day
                 trimestre = (row['DATE'].month - 1) // 3 + 1
-                saison = 'Spring' if 3 <= row['DATE'].month <= 5 else \
-                         'Summer' if 6 <= row['DATE'].month <= 8 else \
-                         'Autumn' if 9 <= row['DATE'].month <= 11 else 'Winter'
+                saison = 'Printemps' if 3 <= row['DATE'].month <= 5 else \
+                         'Été' if 6 <= row['DATE'].month <= 8 else \
+                         'Autumn' if 9 <= row['DATE'].month <= 11 else 'hiver'
 
                 
                 cursor.execute(insert_date_sql, (row['DATE'], mois, année, jour, trimestre, saison))
@@ -113,7 +115,7 @@ try:
                 TAVG FLOAT,
                 TMAX FLOAT,
                 TMIN FLOAT,
-                LOCATION INT
+                LOCATION VARCHAR(25)
             )
             """
             cursor.execute(create_table3_sql)
