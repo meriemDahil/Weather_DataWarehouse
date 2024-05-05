@@ -1,61 +1,99 @@
-import numpy as np
 import pandas as pd
-from sqlalchemy import create_engine
+import pymysql.cursors
 
 # MySQL connection parameters
 host = 'localhost'
 user = 'root'
 database = 'testdatabase'
 
-# Establish a connection to your MySQL database using SQLAlchemy
-engine = create_engine(f"mysql+mysqlconnector://{user}@{host}/{database}")
-
-# Read the CSV file into a DataFrame
-dataframes = pd.read_csv('Weather_1920-1959_MOROCCO.csv') 
-
-# Corrected drop statement
-columns_to_drop = ['WSFG', 'WSFG_ATTRIBUTES', 'WT01', 'WT01_ATTRIBUTES', 'WT03', 'WT03_ATTRIBUTES', 'WT05', 'WT05_ATTRIBUTES', 'WT07', 'WT07_ATTRIBUTES', 'WT08', 'WT08_ATTRIBUTES', 'WT09', 'WT09_ATTRIBUTES', 'WT16', 'WT16_ATTRIBUTES']
-dataframes.drop(columns=columns_to_drop, inplace=True)
-
-# Clean data
-dataframes['STATION'] = dataframes['STATION'].str.strip()
-dataframes['NAME'] = dataframes['NAME'].str.strip()
-dataframes['STATION'].fillna('', inplace=True)
-dataframes['NAME'].fillna('', inplace=True)
-dataframes['STATION'] = dataframes['STATION'].astype(str)
-dataframes['NAME'] = dataframes['NAME'].astype(str)
+# Read the new CSV file into a DataFrame
+dataframes = pd.read_csv('Weather_1960-1989_MOROCCO.csv', low_memory=False)
+# Drop unused columns
+columns_to_keep = ["STATION", "NAME", "LATITUDE", "LONGITUDE", "ELEVATION", "DATE", "PRCP", "PRCP_ATTRIBUTES", "TAVG", "TAVG_ATTRIBUTES", "TMAX", "TMAX_ATTRIBUTES", "TMIN", "TMIN_ATTRIBUTES"]
+dataframes = dataframes[columns_to_keep]
+print(dataframes.info)
+# Ensure 'DATE' column is formatted correctly
 dataframes['DATE'] = pd.to_datetime(dataframes['DATE'])
 
-# Create Dimension Temporelle DataFrame
-dimension_temporelle = dataframes[['DATE']].copy()
+# Fill NaN values with mean for numerical attributes and mode for object attributes
+for column in dataframes.columns:
+    if dataframes[column].dtype == 'object':
+        dataframes[column].fillna(dataframes[column].mode()[0], inplace=True)
+    else:
+        dataframes[column].fillna(dataframes[column].mean(), inplace=True)
+        
+# Modify the DataFrame to split the 'NAME' column into 'STATION_CODE' and 'LOCATION'
+dataframes[['STATION_CODE', 'LOCATION']] = dataframes['NAME'].str.split(', ', expand=True)
 
-dimension_temporelle.loc[:, 'mois'] = dimension_temporelle['DATE'].dt.month
-dimension_temporelle.loc[:, 'année'] = dimension_temporelle['DATE'].dt.year
-dimension_temporelle.loc[:, 'saison'] = ''  # You can define the season based on the month if needed
-dimension_temporelle.loc[:, 'trimestre'] = dimension_temporelle['DATE'].dt.quarter
+# Drop the original 'NAME' column
+dataframes.drop(columns=['NAME'], inplace=True)
 
-# Write DataFrame to MySQL database for Dimension Temporelle
-dimension_temporelle.to_sql('dimension_temporelle', engine, if_exists='append', index=False)
+# Ensure 'STATION_CODE' and 'LOCATION' columns are formatted correctly
+dataframes['STATION_CODE'] = dataframes['STATION_CODE'].astype(str)
+dataframes['LOCATION'] = 212  # Assuming a constant value for LOCATION for now
 
-# Create Dimension Géographique DataFrame
-dimension_geographique = dataframes[['LATITUDE', 'LONGITUDE', 'ELEVATION']].copy()
+try:
+    # Establish a connection to MySQL database using pymysql
+    with pymysql.connect(host=host, user=user, database=database, cursorclass=pymysql.cursors.DictCursor) as connection:
+        # Open cursor
+        with connection.cursor() as cursor:
+            # Create Dimension_Géographique table
+             create_table_sql = """
+                CREATE TABLE IF NOT EXISTS Dimension_Station (
+                    STATION VARCHAR(255) ,
+                    NAME VARCHAR(255),
+                    LATITUDE FLOAT,
+                    LONGITUDE FLOAT,
+                    ELEVATION FLOAT
+                )
+                """
+             cursor.execute(create_table_sql)
 
+            # Insert data into Dimension_Station table
+             for index, row in dataframes.iterrows():
+                # Prepare the SQL query
+                insert_station_sql = """
+                INSERT INTO Dimension_Station (STATION, NAME, LATITUDE, LONGITUDE, ELEVATION)
+                VALUES (%s, %s, %s, %s, %s)
+                """
+                # Execute the SQL query
+                cursor.execute(insert_station_sql, (row['STATION'], row['STATION_CODE'], row['LATITUDE'], row['LONGITUDE'], row['ELEVATION']))
 
-# Write DataFrame to MySQL database for Dimension Géographique
-dimension_geographique.to_sql('dimension_geographique', engine, if_exists='append', index=False)
+            # Create Dimension_Mesures table
+             create_table3_sql = """
+            CREATE TABLE IF NOT EXISTS Dimension_Mesures (
+                DATE DATE,
+                PRCP FLOAT,
+                TAVG FLOAT,
+                TMAX FLOAT,
+                TMIN FLOAT,
+                STATION_CODE VARCHAR(30),
+                LOCATION INT
+            )
+            """
+             cursor.execute(create_table3_sql)
 
-# Create Dimension Station DataFrame
-dimension_station = dataframes[['STATION', 'NAME']].copy()
+            # Insert data into Dimension_Station table
+             for index, row in dataframes.iterrows():
+                # Prepare the SQL query
+                insert_station_sql = """
+                INSERT INTO Dimension_Station (STATION, NAME)
+                VALUES (%s, %s)
+                """
+                # Execute the SQL query
+                cursor.execute(insert_station_sql, (row['STATION'], row['STATION_CODE']))
 
-# Write DataFrame to MySQL database for Dimension Station
-dimension_station.to_sql('dimension_station', engine, if_exists='append', index=False)
+                # Insert data into Dimension_Mesures table
+                insert_mesures_sql = """
+                INSERT INTO Dimension_Mesures (DATE, PRCP, TAVG, TMAX, TMIN, STATION_CODE, LOCATION)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """
+                cursor.execute(insert_mesures_sql, (row['DATE'], row['PRCP'], row['TAVG'], row['TMAX'], row['TMIN'], row['STATION_CODE'], row['LOCATION']))
+            
+        # Commit the transaction
+        connection.commit()
+        print("Tables created and data inserted successfully.")
 
-# Create Table des Faits MesuresMétéorologiques DataFrame
-table_des_faits = dataframes[['DATE', 'LATITUDE', 'LONGITUDE', 'ELEVATION', 'STATION', 'NAME', 'PRCP', 'TMAX', 'TMIN']].copy()
-
-
-# Write DataFrame to MySQL database for Table des Faits MesuresMétéorologiques
-table_des_faits.to_sql('mesuresmeteorologiques', engine, if_exists='append', index=False)
-
-# Close the connection
-engine.dispose()
+except Exception as e:
+    # Rollback the transaction if an error occurs
+    print(f"Error creating tables or inserting data to MySQL: {e}")
